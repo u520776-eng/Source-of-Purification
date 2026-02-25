@@ -1,0 +1,437 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+
+// --- 自定義 SVG 圖標組件 ---
+const Icon = ({ name, size = 20, className = "" }) => {
+  const paths = {
+    zen: <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />,
+    pen: <path d="M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-1.5M2 22l5-5M2 17l5 5" />,
+    brush: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />,
+    img: <><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></>,
+    fire: <path d="M12 2c0 0-4 4.5-4 9.5s4 7.5 4 7.5 4-2.5 4-7.5S12 2zM12 15c-1.1 0-2-.9-2-2s2-4 2-4 2 2.9 2 4-.9 2-2 2z" />,
+    hole: <><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></>,
+    wave: <path d="M2 12c3-3 6 3 9 0s6-3 9 0 6 3 9 0" />,
+    play: <path d="M7 4v16l13-8z" />,
+    pause: <path d="M6 4h4v16H6zm8 0h4v16h-4z" />,
+    x: <path d="M18 6L6 18M6 6l12 12" />,
+    back: <path d="M19 12H5M12 19l-7-7 7-7" />,
+    eraser: <path d="M19 11l-8-8-8.5 8.5a3 3 0 0 0 0 4.3L7 20h12v-9z" />,
+    up: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+  };
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {paths[name]}
+    </svg>
+  );
+};
+
+// --- 聖火粒子單元 ---
+const FireNode = ({ style }) => (
+  <svg viewBox="0 0 100 150" className="absolute bottom-[-120px] fire-node" style={style}>
+    <defs>
+      <radialGradient id="fG" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#fff" />
+        <stop offset="25%" stopColor="#fbbf24" />
+        <stop offset="60%" stopColor="#ea580c" />
+        <stop offset="100%" stopColor="#7c2d12" stopOpacity="0" />
+      </radialGradient>
+    </defs>
+    <path d="M50 0 C70 40 90 70 90 110 A40 40 0 0 1 10 110 C10 70 30 40 50 0" fill="url(#fG)" />
+  </svg>
+);
+
+export default function App() {
+  const [mode, setMode] = useState('text');
+  const [content, setContent] = useState('');
+  const [imgData, setImgData] = useState(null);
+  const [isPainted, setIsPainted] = useState(false);
+  const [brushColor, setBrushColor] = useState('#ffffff');
+  const [ritualTools, setRitualTools] = useState(['burn']);
+  const [progress, setProgress] = useState(0); 
+  const [status, setStatus] = useState('input');
+  const [zenQuote, setZenQuote] = useState({ cn: '', en: '' });
+
+  const canvasRef = useRef(null);
+  const timerRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // 多元化正念語資料庫 (20 則)
+  const quotes = [
+    { cn: "海天無際，心歸寂靜。", en: "Boundless sea, mind returns to silence." },
+    { cn: "浪花過後，大海依舊深邃。", en: "After the waves, the sea remains deep." },
+    { cn: "執著消融，本性自如。", en: "Attachments dissolve, true nature thrives." },
+    { cn: "不迎不拒，心如長空。", en: "Neither welcome nor reject, mind like the vast sky." },
+    { cn: "萬象皆空，一念覺醒。", en: "All is void, awakening in this moment." },
+    { cn: "霧散之時，便是見山之日。", en: "When the mist scatters, it is the day to see the mountain." },
+    { cn: "允許一切發生，如風過林。", en: "Allow everything to happen, like wind through the forest." },
+    { cn: "昨日已逝，明日未至，唯有當下。", en: "Yesterday is gone, tomorrow hasn't arrived, there is only now." },
+    { cn: "煩惱即菩提，轉身即覺醒。", en: "Affliction is enlightenment; a turn is an awakening." },
+    { cn: "清空重負，自由呼吸。", en: "Emptying the weight, breathe in freedom." },
+    { cn: "花開花落，皆是自然。", en: "Flowers bloom and fall, all is nature." },
+    { cn: "心若無物，乾坤自大。", en: "If the mind is empty, the universe is naturally vast." },
+    { cn: "此岸即彼岸，只在一念間。", en: "This shore is that shore, only a thought away." },
+    { cn: "流水不爭先，爭的是滔滔不絕。", en: "Water does not compete for the lead, it competes for continuity." },
+    { cn: "於喧囂中，守一方清淨。", en: "In the midst of noise, guard a piece of purity." },
+    { cn: "看破世事，心如止水。", en: "See through the world, mind like still water." },
+    { cn: "放下，是為了拿起更好的。", en: "Letting go is to pick up something better." },
+    { cn: "每一口呼吸，都是新生的開始。", en: "Every breath is the beginning of a new birth." },
+    { cn: "雲捲雲舒，去留無礙。", en: "Clouds roll and unfold, coming and going without hindrance." },
+    { cn: "隨緣而行，步步生蓮。", en: "Follow the conditions, lotus blooms with every step." }
+  ];
+
+  const rainbowColors = [
+    'rgba(255, 0, 0, 0.4)',    // 紅
+    'rgba(255, 127, 0, 0.4)',  // 橙
+    'rgba(255, 255, 0, 0.4)',  // 黃
+    'rgba(0, 255, 0, 0.4)',    // 綠
+    'rgba(0, 0, 255, 0.4)',    // 藍
+    'rgba(75, 0, 130, 0.4)',   // 靛
+    'rgba(139, 0, 255, 0.4)'   // 紫
+  ];
+  
+  const palette = ['#ffffff', '#10B981', '#3B82F6', '#06B6D4', '#FF4D4D', '#FFA64D', '#FFFF4D'];
+
+  const handleCanvasInit = useCallback(() => {
+    const cvs = canvasRef.current;
+    if (cvs) {
+      const parent = cvs.parentElement;
+      if (cvs.width !== parent.offsetWidth || cvs.height !== parent.offsetHeight) {
+        cvs.width = parent.offsetWidth;
+        cvs.height = parent.offsetHeight;
+      }
+      const ctx = cvs.getContext('2d');
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 12;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'draw' && status === 'input') {
+      const t = setTimeout(handleCanvasInit, 150);
+      return () => clearTimeout(t);
+    }
+  }, [mode, status, handleCanvasInit]);
+
+  const onStartPaint = (e) => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    setIsPainted(true);
+    const rect = cvs.getBoundingClientRect();
+    const ctx = cvs.getContext('2d');
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.35; 
+    ctx.strokeStyle = brushColor;
+    
+    const getX = (ev) => {
+      const clientX = ev.clientX || (ev.touches && ev.touches[0].clientX);
+      return clientX - rect.left;
+    };
+    const getY = (ev) => {
+      const clientY = ev.clientY || (ev.touches && ev.touches[0].clientY);
+      return clientY - rect.top;
+    };
+
+    ctx.beginPath(); 
+    ctx.moveTo(getX(e), getY(e));
+
+    const onMoving = (me) => { 
+      if (me.cancelable) me.preventDefault();
+      ctx.lineTo(getX(me), getY(me)); 
+      ctx.stroke(); 
+    };
+
+    const onEnd = () => {
+      window.removeEventListener('mousemove', onMoving);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMoving);
+      window.removeEventListener('touchend', onEnd);
+    };
+
+    window.addEventListener('mousemove', onMoving);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMoving, { passive: false });
+    window.addEventListener('touchend', onEnd);
+  };
+
+  const runRitual = () => {
+    setStatus('purifying');
+    timerRef.current = setInterval(() => {
+      setProgress(prev => {
+        const inc = 100 / (120 / ritualTools.length);
+        const next = prev + inc;
+        if (next >= 100) {
+          clearInterval(timerRef.current);
+          setZenQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+          setStatus('finished');
+          return 100;
+        }
+        return next;
+      });
+    }, 50);
+  };
+
+  const handleRestart = () => {
+    if(timerRef.current) clearInterval(timerRef.current);
+    setProgress(0); setContent(''); setImgData(null); setIsPainted(false);
+    setStatus('input'); setMode('text');
+  };
+
+  const canStart = () => {
+    if (mode === 'text') return content.trim().length > 0;
+    if (mode === 'draw') return isPainted;
+    if (mode === 'image') return imgData !== null;
+    return false;
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => { setImgData(ev.target.result); setMode('image'); };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div className="h-screen w-full flex flex-col relative overflow-hidden text-white font-sans selection:bg-emerald-500/20">
+      <style>{`
+        @keyframes fire-rise { 
+          0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 0; } 
+          10% { opacity: 0.9; filter: brightness(2) blur(1px); } 
+          50% { transform: translateY(-450px) scale(2.2) rotate(15deg); opacity: 0.6; }
+          100% { transform: translateY(-1000px) scale(0.4) rotate(-20deg); opacity: 0; } 
+        }
+        .fire-node { animation: fire-rise 4.2s infinite ease-out; filter: drop-shadow(0 0 35px rgba(249, 115, 22, 0.6)); }
+
+        @keyframes bh-spin { 
+          0% { transform: rotate(0deg) scale(1.1); filter: blur(0); } 
+          100% { transform: rotate(-7200deg) scale(0); filter: blur(150px); } 
+        }
+        .bh-vortex { animation: bh-spin 6s forwards cubic-bezier(0.4, 0, 1, 0.2); }
+
+        @keyframes water-ripple {
+          0% { transform: scale(0); opacity: 0; border-width: 40px; }
+          10% { opacity: 0.6; }
+          100% { transform: scale(10); opacity: 0; border-width: 1px; }
+        }
+        .rainbow-ripple {
+          position: absolute; border-style: solid; border-radius: 50%;
+          animation: water-ripple 8s infinite cubic-bezier(0.2, 0.4, 0.3, 1);
+          pointer-events: none;
+          z-index: 30;
+          box-shadow: 0 0 50px currentColor inset;
+        }
+
+        .heavy-text {
+          font-weight: 700;
+          font-size: clamp(1.2rem, 5vw, 4rem);
+          letter-spacing: -0.01em;
+          line-height: 1.4;
+          text-shadow: 0 8px 25px rgba(0,0,0,0.4);
+          background: linear-gradient(to bottom, #fff 50%, #d1fae5 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+        .glass { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(40px); border: 1px solid rgba(255, 255, 255, 0.2); }
+      `}</style>
+
+      {/* 藍綠漸層背景：天藍 -> 翡翠 -> 深海藍 */}
+      <div className="fixed inset-0 z-[-1] bg-gradient-to-b from-cyan-300 via-emerald-600 via-teal-800 to-blue-900" />
+
+      <header className="px-6 py-2 flex justify-between items-center z-50 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 glass rounded-lg flex items-center justify-center text-emerald-100">
+            <Icon name="zen" size={18} />
+          </div>
+          <h1 className="font-black tracking-[0.2em] text-[12px] uppercase opacity-80">淨化之源</h1>
+        </div>
+        <div className="px-3 py-1 glass rounded-full opacity-40">
+          <span className="text-[8px] font-black uppercase tracking-widest text-emerald-50">Zen Purify Pro</span>
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col px-4 pb-2 pt-0 max-w-7xl mx-auto w-full z-10 overflow-hidden">
+        
+        {status !== 'finished' && (
+          <nav className="flex glass p-1 rounded-2xl mb-2 gap-1 shrink-0 shadow-lg border-white/20">
+            {['text', 'draw', 'image'].map(id => (
+              <button 
+                key={id} 
+                disabled={status === 'purifying'} 
+                onClick={() => setMode(id)}
+                className={`flex-1 flex items-center justify-center gap-2 h-9 rounded-xl text-[11px] font-bold transition-all ${mode === id ? 'bg-white text-teal-800 shadow-md scale-[1.02]' : 'text-white hover:text-emerald-100 hover:bg-white/10'}`}
+              >
+                <Icon name={id === 'text' ? 'pen' : id === 'draw' ? 'brush' : 'img'} size={14}/>
+                <span className="tracking-[0.1em]">{id === 'text' ? '筆耕' : id === 'draw' ? '意繪' : '影跡'}</span>
+              </button>
+            ))}
+          </nav>
+        )}
+
+        <section className={`relative flex-1 flex flex-col rounded-[30px] glass border-white/20 overflow-hidden shadow-2xl transition-all duration-1000 ${status === 'finished' ? 'bg-transparent border-none shadow-none' : ''}`}>
+          
+          {status === 'purifying' && ritualTools.includes('burn') && (
+            <div className="absolute inset-0 z-40 pointer-events-none">
+              <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-emerald-400/30 to-transparent" />
+              {[...Array(30)].map((_, i) => (
+                <FireNode key={i} style={{ left: `${i * 3.33}%`, animationDelay: `${Math.random() * 2}s`, width: `${80 + Math.random() * 70}px` }} />
+              ))}
+            </div>
+          )}
+
+          {status === 'purifying' && ritualTools.includes('wave') && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+              {rainbowColors.map((color, i) => (
+                <div 
+                  key={i} 
+                  className="rainbow-ripple" 
+                  style={{ 
+                    borderColor: color, 
+                    color: color, 
+                    animationDelay: `${i * 0.8}s`
+                  }} 
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="absolute inset-0 flex items-center justify-center z-20 p-6">
+            {status !== 'finished' ? (
+              <div 
+                className={`w-full h-full flex items-center justify-center transition-all duration-[1200ms] ${status === 'purifying' && ritualTools.includes('hole') ? 'bh-vortex' : ''}`}
+                style={{ 
+                  opacity: status === 'purifying' ? 1 - (progress / 100) : 1,
+                  filter: status === 'purifying' ? `blur(${progress / 1.1}px)` : 'none',
+                  transform: status === 'purifying' ? `scale(${1 - (progress / 500)})` : 'none'
+                }}
+              >
+                {mode === 'text' && (
+                  <textarea 
+                    className="w-full h-full bg-transparent resize-none outline-none heavy-text border-none p-4 placeholder:text-emerald-100/20 text-center"
+                    placeholder="在此寫下那些想放下的..."
+                    value={content} 
+                    onChange={(e) => setContent(e.target.value)} 
+                    disabled={status === 'purifying'} 
+                  />
+                )}
+                
+                {mode === 'draw' && (
+                  <canvas 
+                    ref={canvasRef} 
+                    onMouseDown={onStartPaint} 
+                    onTouchStart={onStartPaint} 
+                    className="cursor-crosshair w-full h-full" 
+                  />
+                )}
+                
+                {mode === 'image' && (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {imgData ? (
+                      <img src={imgData} className="max-w-full max-h-full rounded-2xl shadow-2xl border-2 border-white/20 object-contain" alt="執念影跡" />
+                    ) : (
+                      <button 
+                        onClick={() => fileInputRef.current.click()} 
+                        className="flex flex-col items-center justify-center gap-6 p-8 border-2 border-dashed border-white/30 rounded-[40px] text-emerald-50 hover:text-white transition-all w-full h-full bg-white/5 group"
+                      >
+                        <Icon name="up" size={50} className="group-hover:scale-110 transition-transform opacity-50 text-emerald-100" />
+                        <p className="text-lg font-black uppercase opacity-40 tracking-[0.4em]">上傳執念影跡</p>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center animate-in fade-in zoom-in duration-1000 p-4">
+                <div className="max-w-3xl w-full flex flex-col items-center text-center gap-12 bg-white/[0.05] p-10 md:p-20 rounded-[40px] border border-white/10 shadow-inner">
+                  <div className="space-y-10">
+                    <p className="text-3xl md:text-5xl font-light text-white italic tracking-tighter leading-tight">{zenQuote.cn}</p>
+                    <div className="w-16 h-px bg-gradient-to-r from-transparent via-emerald-300 to-transparent mx-auto opacity-40" />
+                    <p className="text-[12px] font-bold text-emerald-50 uppercase tracking-[0.5em] opacity-50">{zenQuote.en}</p>
+                  </div>
+                  <button onClick={handleRestart} className="flex flex-col items-center gap-4 group active:scale-95 transition-all">
+                    <div className="w-12 h-12 glass border-white/20 rounded-full flex items-center justify-center shadow-lg group-hover:bg-white/20">
+                      <Icon name="back" size={20} className="text-white group-hover:-translate-x-1 transition-transform" />
+                    </div>
+                    <span className="text-[9px] font-black tracking-[0.3em] text-white opacity-40 uppercase">重新開啟</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 側邊色盤 */}
+          {mode === 'draw' && status === 'input' && (
+            <div className="absolute top-1/2 right-3 -translate-y-1/2 flex flex-col gap-2 p-3 rounded-2xl glass shadow-xl z-50 border-white/20 bg-black/20">
+              {palette.map(c => (
+                <button 
+                  key={c} 
+                  onClick={() => setBrushColor(c)}
+                  className={`w-6 h-6 rounded-full border-2 transition-transform ${brushColor === c ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.4)]' : 'border-white/10 opacity-70 hover:opacity-100'}`}
+                  style={{ backgroundColor: c }} 
+                />
+              ))}
+              <div className="h-px bg-white/20 my-1" />
+              <button 
+                onClick={() => { 
+                  const ctx = canvasRef.current.getContext('2d');
+                  ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); 
+                  setIsPainted(false); 
+                }}
+                className="p-2 glass text-white rounded-lg active:scale-90 border-white/20 hover:bg-white/10"
+              >
+                <Icon name="eraser" size={16}/>
+              </button>
+            </div>
+          )}
+        </section>
+
+        {status !== 'finished' && (
+          <div className="flex flex-col gap-2 shrink-0 mt-3">
+            <div className="flex justify-center items-center gap-8 md:gap-14 glass py-2 border-white/20 rounded-[20px] shadow-sm">
+              {[
+                { id: 'burn', icon: 'fire', cn: '火' },
+                { id: 'hole', icon: 'hole', cn: '穴' },
+                { id: 'wave', icon: 'wave', cn: '虹' }
+              ].map(m => (
+                <button 
+                  key={m.id} 
+                  onClick={() => setRitualTools(prev => prev.includes(m.id) ? (prev.length > 1 ? prev.filter(t => t !== m.id) : prev) : [...prev, m.id])} 
+                  className={`flex flex-col items-center gap-1 transition-all ${ritualTools.includes(m.id) ? 'scale-110 text-emerald-100' : 'opacity-30 grayscale hover:opacity-50'}`}
+                >
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${ritualTools.includes(m.id) ? 'bg-emerald-400/40 border-emerald-300 shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent border-white/10'}`}>
+                    <Icon name={m.icon} size={18}/>
+                  </div>
+                  <span className="text-[9px] font-black tracking-widest uppercase text-white">{m.cn}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2 h-14">
+              <button 
+                disabled={!canStart()} 
+                onClick={status === 'purifying' ? null : runRitual}
+                className={`flex-1 rounded-[20px] font-black tracking-[1.2em] shadow-lg flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-20 transition-all ${status === 'purifying' ? 'bg-emerald-400 text-white animate-pulse' : 'bg-white text-blue-900 hover:bg-emerald-50'}`}
+              >
+                <Icon name={status === 'purifying' ? 'pause' : 'play'} size={20} className="fill-current" />
+                <span className="text-[14px] uppercase pl-[1.2em]">{status === 'purifying' ? '淨化中' : '啟動淨化'}</span>
+              </button>
+              {progress > 0 && (
+                <button onClick={handleRestart} className="w-14 glass border-white/20 rounded-[20px] flex items-center justify-center hover:text-rose-400 active:scale-90 transition-colors">
+                  <Icon name="x" size={20}/>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+
+      <footer className="py-2 text-center opacity-20 shrink-0 pointer-events-none">
+        <p className="text-[7px] font-black tracking-[1.5em] uppercase text-white">EMERALD SPIRIT • OCEAN CALM • ZEN AWAKENING</p>
+      </footer>
+    </div>
+  );
+}
+
